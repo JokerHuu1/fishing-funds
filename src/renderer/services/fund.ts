@@ -5,25 +5,257 @@ import dayjs from 'dayjs';
 import request from '@/utils/request';
 import * as Utils from '@/utils';
 
-// 天天基金
-export async function FromEastmoney(code: string) {
-  try {
-    const { body } = await request(`https://fundgz.1234567.com.cn/js/${code}.js`, {
-      responseType: 'text',
-    });
-    if (body.startsWith('jsonpgz')) {
-      const fund: Fund.ResponseItem = eval(body);
-      if (fund === undefined || fund.gsz === '' || Number.isNaN(Number(fund.gszzl))) {
-        return await GetEtfFundHourFromEastMoney(code);
-      } else {
-        return fund;
-      }
-    } else {
-      return;
-    }
-  } catch (error) {
-    return await GetEtfFundHourFromEastMoney(code);
+/* -------------------------------------------------------------------------- */
+/*                            基金实时估值（新接口）                            */
+/* -------------------------------------------------------------------------- */
+/**
+ * 说明：
+ * 天天基金已于 2025 年底下线 fundgz.1234567.com.cn 的 JSONP 估值接口
+ * （请求会返回东方财富的 “页面未找到” HTML），导致基金列表整体为空。
+ *
+ * 现改用天天基金新版批量估值接口，一次请求可获取多只基金的名称/净值/估值：
+ *   主接口：https://fundcomapi.tiantianfunds.com/mm/newCore/FundValuationLast
+ *   备接口：https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo（iOS 通道）
+ *
+ * 无估值的基金（QDII、部分主动型基金）会退化为「仅展示最新净值」，
+ * 等净值更新后由 GetFixFromEastMoney 修补。
+ */
+const FUND_VALUATION_URL = 'https://fundcomapi.tiantianfunds.com/mm/newCore/FundValuationLast';
+const FUND_VALUATION_FIELDS = 'FCODE,SHORTNAME,GSZZL,GZTIME,GSZ,NAV,PDATE';
+const FUND_VALUATION_BATCH_SIZE = 50;
+
+const FUND_MOBILE_INFO_URL = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo';
+const FUND_MOBILE_BATCH_SIZE = 100;
+const FUND_MOBILE_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 14_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 eastmoney/6.2.8',
+};
+
+// 移动端接口对 deviceid 有格式要求，模块加载时生成一个稳定的 uuid
+const FUND_DEVICE_ID = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+  const random = (Math.random() * 16) | 0;
+  const value = char === 'x' ? random : (random & 0x3) | 0x8;
+  return value.toString(16);
+});
+
+/** 无估值时的占位文案，CalcFund 依赖该文案判断是否使用官方净值 */
+export const NO_ESTIMATE_FLAG = '暂无估值';
+
+/** 将接口返回的数字字段统一为 4 位/2 位小数字符串 */
+function ToFixedString(value: unknown, digits = 4) {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
   }
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(digits) : undefined;
+}
+
+/** 把天天基金估值接口的原始条目转换为页面使用的结构 */
+function ParseFundValuation(item: Record<string, any>): Fund.ResponseItem | undefined {
+  const fundcode = item?.FCODE || item?.Fcode;
+  if (!fundcode) {
+    return undefined;
+  }
+  return {
+    fundcode: String(fundcode),
+    name: item.SHORTNAME ? String(item.SHORTNAME) : undefined,
+    jzrq: item.PDATE ? String(item.PDATE) : undefined,
+    dwjz: ToFixedString(item.NAV ?? item.DWJZ),
+    gsz: ToFixedString(item.GSZ),
+    gszzl: ToFixedString(item.GSZZL, 2),
+    gztime: item.GZTIME ? String(item.GZTIME) : undefined,
+  };
+}
+
+/** 主接口：批量估值（单次最多 50 只） */
+async function RequestFundValuationLast(codes: string[]) {
+  const result: Record<string, Fund.ResponseItem> = {};
+  const { body } = await request<any>(FUND_VALUATION_URL, {
+    searchParams: {
+      FCODES: codes.join(','),
+      FIELDS: FUND_VALUATION_FIELDS,
+    },
+    responseType: 'json',
+  });
+  const list: Record<string, any>[] = Array.isArray(body?.data) ? body.data : [];
+  list.forEach((item) => {
+    const fund = ParseFundValuation(item);
+    if (fund?.fundcode) {
+      result[fund.fundcode] = fund;
+    }
+  });
+  return result;
+}
+
+/** 备接口：天天基金移动端（主接口不可用或缺少个别基金时兜底） */
+async function RequestFundInfoFromMobile(codes: string[]) {
+  const result: Record<string, Fund.ResponseItem> = {};
+  const { body } = await request<any>(FUND_MOBILE_INFO_URL, {
+    searchParams: {
+      Fcodes: codes.join(','),
+      pageIndex: 1,
+      pageSize: 200,
+      Sort: '',
+      SortColumn: '',
+      IsShowSE: 'false',
+      P: 'F',
+      deviceid: FUND_DEVICE_ID,
+      plat: 'Iphone',
+      product: 'EFund',
+      version: '6.2.8',
+    },
+    headers: FUND_MOBILE_HEADERS,
+    responseType: 'json',
+  });
+  const list: Record<string, any>[] = Array.isArray(body?.Datas) ? body.Datas : [];
+  list.forEach((item) => {
+    const fund = ParseFundValuation(item);
+    if (fund?.fundcode) {
+      result[fund.fundcode] = fund;
+    }
+  });
+  return result;
+}
+
+function SplitCodes(codes: string[], size: number) {
+  const chunks: string[][] = [];
+  for (let index = 0; index < codes.length; index += size) {
+    chunks.push(codes.slice(index, index + size));
+  }
+  return chunks;
+}
+
+/**
+ * 批量获取基金估值/净值
+ * @returns code -> 估值信息，未查询到的代码不会出现在结果中
+ */
+export async function GetFundValuationsFromEastMoney(codes: string[]) {
+  const uniqueCodes = Array.from(
+    new Set(
+      (codes || [])
+        .map((code) => String(code || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const valuations: Record<string, Fund.ResponseItem> = {};
+  if (!uniqueCodes.length) {
+    return valuations;
+  }
+
+  try {
+    const results = await Promise.allSettled(SplitCodes(uniqueCodes, FUND_VALUATION_BATCH_SIZE).map(RequestFundValuationLast));
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        Object.assign(valuations, result.value);
+      }
+    });
+  } catch (error) {}
+
+  // 主接口漏掉的代码用移动端接口补齐（也用于主接口整体异常时兜底）
+  const missCodes = uniqueCodes.filter((code) => !valuations[code]);
+  if (missCodes.length) {
+    try {
+      const results = await Promise.allSettled(SplitCodes(missCodes, FUND_MOBILE_BATCH_SIZE).map(RequestFundInfoFromMobile));
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          Object.assign(valuations, result.value);
+        }
+      });
+    } catch (error) {}
+  }
+
+  return valuations;
+}
+
+/** 场内基金代码段，估值缺失时可用场内实时行情兜底 */
+function IsExchangeTradedFund(code: string) {
+  return /^(15|16|50|51|52|56|58)\d{4}$/.test(code);
+}
+
+/** 场内 ETF 实时行情（只取行情，不再回落到网页抓取） */
+async function GetExchangeFundQuoteFromEastMoney(code: string) {
+  try {
+    const { body } = await request<any>('https://push2.eastmoney.com/api/qt/stock/get', {
+      searchParams: {
+        invt: 2,
+        fltt: 1,
+        fields: 'f43,f57,f58,f60,f86,f170',
+        secid: `${/^(5|6)/.test(code) ? 1 : 0}.${code}`,
+        wbp2u: '|0|0|0|web',
+        _: Date.now(),
+      },
+      responseType: 'json',
+    });
+    const data = body?.data;
+    if (!data?.f58 || !String(data.f58).toLowerCase().includes('etf')) {
+      return undefined;
+    }
+    const preClose = Number(data.f60);
+    const price = Number(data.f43 === '-' ? data.f60 : data.f43);
+    if (!Number.isFinite(preClose) || !Number.isFinite(price)) {
+      return undefined;
+    }
+    return {
+      name: String(data.f58),
+      dwjz: (preClose / 1000).toFixed(4),
+      fundcode: code,
+      gztime: dayjs(Number(data.f86) * 1000).format('YYYY-MM-DD HH:mm'),
+      jzrq: `${new Date().getFullYear()}-昨收`,
+      gsz: (price / 1000).toFixed(4),
+      gszzl: ((Number(data.f170 === '-' ? 0 : data.f170) || 0) / 100).toFixed(2),
+    } as Fund.ResponseItem;
+  } catch (error) {
+    return undefined;
+  }
+}
+
+/** 无估值兜底：展示最新净值，涨跌幅留空，避免基金行整体消失 */
+function BuildNoEstimateFund(fund: Fund.ResponseItem) {
+  return {
+    ...fund,
+    gsz: fund.dwjz,
+    gszzl: '',
+    gztime: fund.gztime || `${new Date().getFullYear()}-${NO_ESTIMATE_FLAG}`,
+  } as Fund.ResponseItem;
+}
+
+/**
+ * 批量获取基金行情（估值 + 场内行情 + 无估值兜底），保持传入代码的顺序
+ */
+export async function GetFundResponsesFromEastMoney(codes: string[]) {
+  const uniqueCodes = Array.from(
+    new Set(
+      (codes || [])
+        .map((code) => String(code || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const valuations = await GetFundValuationsFromEastMoney(uniqueCodes);
+
+  // 无估值的场内基金（多为 QDII-ETF）用实时行情兜底
+  const quoteCodes = uniqueCodes.filter((code) => valuations[code] && !valuations[code].gsz && IsExchangeTradedFund(code));
+  if (quoteCodes.length) {
+    const quotes = await Promise.all(quoteCodes.map((code) => GetExchangeFundQuoteFromEastMoney(code)));
+    quotes.forEach((quote) => {
+      if (quote?.fundcode && quote.gsz) {
+        valuations[quote.fundcode] = quote;
+      }
+    });
+  }
+
+  return uniqueCodes.map((code) => {
+    const fund = valuations[code];
+    if (!fund) {
+      return undefined;
+    }
+    return fund.gsz ? fund : BuildNoEstimateFund(fund);
+  });
+}
+
+// 天天基金（单只基金，供新增/搜索等场景使用）
+export async function FromEastmoney(code: string) {
+  const [fund] = await GetFundResponsesFromEastMoney([code]);
+  return fund;
 }
 
 // 腾讯证券
@@ -419,13 +651,40 @@ export async function GetInverstStyleFromEastmoney(code: string) {
   }
 }
 
+/** 基金持仓（股票/债券）统一从移动端接口获取，网页版持仓表格已下线 */
+async function GetFundPositionsFromEastMoney(code: string) {
+  const { body } = await request<any>('https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition', {
+    searchParams: {
+      FCODE: code,
+      deviceid: FUND_DEVICE_ID,
+      plat: 'Iphone',
+      product: 'EFund',
+      version: '6.2.8',
+    },
+    headers: FUND_MOBILE_HEADERS,
+    responseType: 'json',
+  });
+  const datas = body?.Datas || {};
+  return {
+    stocks: Array.isArray(datas.fundStocks) ? datas.fundStocks : [],
+    bonds: Array.isArray(datas.fundboods) ? datas.fundboods : [],
+    quarter: body?.Expansion || '',
+  };
+}
+
 // 从天天基金获取股票持仓
 export async function GetStockWareHouseFromEastmoney(code: string, stockCodes: string[]) {
   try {
-    const { body: html } = await request(`https://fund.eastmoney.com/${code}.html`, { responseType: 'text' });
-    const $ = cheerio.load(html);
-    const secids = (stockCodes || []).join(',') || '';
-    const tors = $('#quotationItem_DataTable').find('#position_shares').find('tr > td:nth-child(2)').text().split('%');
+    const { stocks } = await GetFundPositionsFromEastMoney(code);
+    const positions = stocks.filter((item: any) => item.GPDM);
+    // 优先使用持仓接口返回的股票代码，接口无数据时退回基金详情里的持仓代码
+    const secids = positions.length
+      ? positions.map((item: any) => `${item.NEWTEXCH ?? item.TEXCH ?? 0}.${item.GPDM}`).join(',')
+      : (stockCodes || []).join(',');
+    if (!secids) {
+      return [];
+    }
+    const warehouseMap = new Map(positions.map((item: any) => [String(item.GPDM), String(item.JZBL ?? '')]));
 
     const {
       body: { data },
@@ -437,26 +696,16 @@ export async function GetStockWareHouseFromEastmoney(code: string, stockCodes: s
       },
       responseType: 'json',
     });
-    const {
-      diff,
-    }: {
-      diff: {
-        f2: string; // 最新价
-        f3: number; // 涨跌幅
-        f14: string; // 名称
-        f13: string; // market
-        f12: string; // 股票代码
-      }[];
-    } = data;
+    const diff: any[] = data?.diff || [];
 
-    const result: Fund.WareHouse[] = diff.map((item, index) => {
+    const result: Fund.WareHouse[] = diff.map((item) => {
       return {
         zxz: item.f2,
         name: item.f14,
         market: item.f13,
         code: item.f12,
         zdf: item.f3,
-        ccb: tors[index], // 持仓比
+        ccb: warehouseMap.get(String(item.f12)) ?? '',
       };
     });
     return result;
@@ -468,43 +717,20 @@ export async function GetStockWareHouseFromEastmoney(code: string, stockCodes: s
 // 从天天基金获取债券持仓
 export async function GetSecuritiesWareHouseFromEastmoney(code: string, securitiesCodes: string) {
   try {
-    const { body: html } = await request(`https://fund.eastmoney.com/${code}.html`, { responseType: 'text' });
-    const $ = cheerio.load(html);
-    const secids = securitiesCodes || '';
-    const tors = $('#quotationItem_DataTable').find('#position_bonds').find('tr > td:nth-child(2)').text().split('%');
-
-    const {
-      body: { data },
-    } = await request<any>('https://push2.eastmoney.com/api/qt/ulist.np/get', {
-      searchParams: {
-        fields: 'f2,f3,f12,f13,f14',
-        fltt: 2,
-        secids,
-      },
-      responseType: 'json',
-    });
-    const {
-      diff,
-    }: {
-      diff: {
-        f2: string; // 最新价
-        f3: number; // 涨跌幅
-        f14: string; // 名称
-        f13: string; // market
-        f12: string; // 债券代码
-      }[];
-    } = data;
-    const result: Fund.WareHouse[] = diff.map((item, index) => {
-      return {
-        zxz: item.f2,
-        name: item.f14,
-        market: item.f13,
-        code: item.f12,
-        zdf: item.f3,
-        ccb: tors[index], // 持仓比
-      };
-    });
-    return result;
+    const { bonds } = await GetFundPositionsFromEastMoney(code);
+    if (!bonds.length) {
+      return [];
+    }
+    return bonds
+      .filter((item: any) => item.ZQDM)
+      .map((item: any) => ({
+        zxz: '--',
+        name: String(item.ZQMC || item.ZQDM),
+        market: 0,
+        code: String(item.ZQDM),
+        zdf: 0,
+        ccb: String(item.ZJZBL ?? ''),
+      })) as Fund.WareHouse[];
   } catch (error) {
     return [];
   }
@@ -1119,47 +1345,11 @@ export async function GetFundRatingFromEasemoney() {
 // 查询基金持仓行业占比
 export async function GetIndustryRateFromEaseMoney(code: string) {
   try {
-    const { body } = await request<{
-      Datas: {
-        fundStocks: {
-          GPDM: 'MSFT';
-          GPJC: '微软';
-          JZBL: string;
-          TEXCH: '7';
-          ISINVISBL: '--';
-          PCTNVCHGTYPE: '--';
-          PCTNVCHG: '--';
-          NEWTEXCH: '105';
-          INDEXCODE: '--';
-          INDEXNAME: string;
-        }[];
-        fundboods: [];
-        fundfofs: [];
-        ETFCODE: null;
-        ETFSHORTNAME: null;
-      };
-      ErrCode: 0;
-      Success: true;
-      ErrMsg: null;
-      Message: null;
-      ErrorCode: '0';
-      ErrorMessage: null;
-      ErrorMsgLst: null;
-      TotalCount: 1;
-      Expansion: '2021-06-30';
-    }>(`https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition`, {
-      searchParams: {
-        product: 'EFund',
-        FCODE: code,
-        deviceid: 1,
-        version: '6.2.7',
-        plat: 'Android',
-      },
-      responseType: 'json',
-    });
+    // 与持仓数据同源，按重仓股所属行业（INDEXNAME）聚合展示
+    const { stocks, quarter } = await GetFundPositionsFromEastMoney(code);
     return {
-      stocks: body.Datas?.fundStocks || [],
-      expansion: body.Expansion || '',
+      stocks: stocks.filter((item: any) => item.INDEXNAME && item.INDEXNAME !== '--'),
+      expansion: quarter,
     };
   } catch (error) {
     return {
@@ -1230,7 +1420,7 @@ export async function GetTodayListFromEastmoney(type: number) {
         _: Date.now(),
       },
       headers: {
-        Referer: 'ttp://fund.eastmoney.com/',
+        Referer: 'https://fund.eastmoney.com/',
       },
       responseType: 'json',
     });

@@ -4,6 +4,15 @@
 
 # Fishing Funds
 
+> [!IMPORTANT]
+> **这是 `1zilc/fishing-funds` v8.7.1 的个人修复分支，非官方版本。**
+>
+> 上游自 v8.8.0 起把接口层抽到了私有子模块，而旧版依赖的天天基金 JSONP 估值接口
+> （`fundgz.1234567.com.cn`）已经下线，导致基金列表全空。本分支改用天天基金新版批量估值接口，
+> 恢复了基金列表、盘中估值、持仓与指数行情。
+>
+> 具体改动、接口对照与已知限制见 [FIX.md](FIX.md)。原作者与版权归 [1zilc](https://github.com/1zilc) 所有，本项目遵循 GPL-3.0。
+
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/1zilc/fishing-funds)
 ![GitHub Release Date](https://img.shields.io/github/release-date/1zilc/fishing-funds)
 ![GitHub all releases](https://img.shields.io/github/downloads/1zilc/fishing-funds/total)

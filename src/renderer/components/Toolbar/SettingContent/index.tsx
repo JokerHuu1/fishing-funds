@@ -284,13 +284,14 @@ const SettingContent: React.FC<SettingContentProps> = (props) => {
                     }
                   >
                     <div className={clsx(styles.setting, 'card-body')}>
-                      <Radio.Group value={fundapiType} onChange={(e) => setFundApiType(e.target.value)}>
-                        {APIOptions.map((api) => (
-                          <Radio key={api.code} className={styles.radio} value={api.code}>
-                            {api.name}
-                          </Radio>
-                        ))}
+                      <Radio.Group value={Enums.FundApiType.Eastmoney} onChange={() => setFundApiType(Enums.FundApiType.Eastmoney)}>
+                        <Radio className={styles.radio} value={Enums.FundApiType.Eastmoney}>
+                          东方财富-天天基金（已适配新版估值接口）
+                        </Radio>
                       </Radio.Group>
+                      <div style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>
+                        腾讯证券、蚂蚁基金、同花顺爱基金的估值接口已停止服务，数据源固定为天天基金
+                      </div>
                     </div>
                   </StandCard>
                   <StandCard

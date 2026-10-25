@@ -18,7 +18,11 @@ export function GetFundConfigMaps(codes: string[], walletsConfig: Wallet.Setting
 
 export async function GetFixFunds(funds: (Fund.ResponseItem & Fund.FixData)[]) {
   const collectors = funds
-    .filter(({ fixDate, gztime }) => !fixDate || fixDate !== gztime?.slice(5, 10))
+    .filter(({ fixDate, gztime, jzrq }) => {
+      // 无估值基金（QDII 等）以最新净值日期作为对比基准
+      const valueDate = gztime?.includes(Services.Fund.NO_ESTIMATE_FLAG) ? jzrq?.slice(5) : gztime?.slice(5, 10);
+      return !fixDate || fixDate !== valueDate;
+    })
     .map(
       ({ fundcode }) =>
         () =>
@@ -29,42 +33,18 @@ export async function GetFixFunds(funds: (Fund.ResponseItem & Fund.FixData)[]) {
 }
 
 export async function GetFunds(config: Fund.SettingItem[], fundApiTypeSetting: Enums.FundApiType) {
-  const collectors = config.map(
-    ({ code }) =>
-      () =>
-        GetFund(code, fundApiTypeSetting)
-  );
-  const load = () => {
-    switch (fundApiTypeSetting) {
-      case Enums.FundApiType.Tencent:
-        return Adapter.ChokeGroupAdapter(collectors, 3, 300);
-      case Enums.FundApiType.Ant:
-        return Adapter.ChokeGroupAdapter(collectors, 4, 400);
-      case Enums.FundApiType.Fund10jqka:
-        return Adapter.ChokeGroupAdapter(collectors, 5, 500);
-      case Enums.FundApiType.Eastmoney:
-      default:
-        return Adapter.ChokeGroupAdapter(collectors, 5, 500);
-    }
-  };
-  const list = await load();
-
-  return list.filter(Utils.NotEmpty);
+  const codes = config.map(({ code }) => code).filter(Boolean);
+  if (!codes.length) {
+    return [];
+  }
+  // 估值接口已改为批量接口，一次请求即可获取全部基金，避免逐只请求
+  const funds = await Services.Fund.GetFundResponsesFromEastMoney(codes);
+  return funds.filter(Utils.NotEmpty);
 }
 
 export async function GetFund(code: string, fundApiTypeSetting: Enums.FundApiType) {
-  switch (fundApiTypeSetting) {
-    case Enums.FundApiType.Tencent:
-      return Services.Fund.FromTencent(code);
-    case Enums.FundApiType.Ant:
-      return Services.Fund.FromFund123(code);
-    case Enums.FundApiType.Fund10jqka:
-      return Services.Fund.FromFund10jqka(code);
-    case Enums.FundApiType.Eastmoney:
-    default:
-      // 默认请求天天基金
-      return Services.Fund.FromEastmoney(code);
-  }
+  // 腾讯证券、蚂蚁基金、同花顺爱基金的估值接口均已停止服务，统一使用天天基金
+  return Services.Fund.FromEastmoney(code);
 }
 
 export function CalcFund(fund: Fund.ResponseItem & Fund.FixData, codeMap: Fund.CodeMap) {
@@ -73,7 +53,9 @@ export function CalcFund(fund: Fund.ResponseItem & Fund.FixData, codeMap: Fund.C
   const cbj = config?.cbj;
   const memo = config?.memo;
 
-  const gzrq = fund.gztime?.slice(5, 10);
+  // 无估值基金（QDII 等）没有估值时间，用最新净值日期作为定净值对比基准
+  const isNoEstimate = !!fund.gztime?.includes(Services.Fund.NO_ESTIMATE_FLAG);
+  const gzrq = isNoEstimate ? fund.jzrq?.slice(5) : fund.gztime?.slice(5, 10);
   const jzrq = fund.jzrq?.slice(5);
   const isFix = fund.fixDate && fund.fixDate === gzrq;
   const gsz = isFix ? fund.fixDwjz! : fund.gsz!;
