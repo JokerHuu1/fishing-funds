@@ -77,3 +77,41 @@ npx electron-builder build --win nsis --x64 -p never
   本分支会退化为「展示最新净值 + 涨幅留空」，不会让整行消失。
 - QDII、部分 FOF 在部分时段同样取不到估值，表现同上。
 - 估值数据仅供学习参考，实际收益以基金公司公布净值为准。
+
+## 六、参考项目与开源合规
+
+本次修复在调研与实现过程中参考了以下开源项目，在此致谢：
+
+| 项目 | 作者 | 许可证 | 参考内容 |
+| --- | --- | --- | --- |
+| [hzm0321/real-time-fund](https://github.com/hzm0321/real-time-fund) | hzm0321 | [AGPL-3.0](https://github.com/hzm0321/real-time-fund/blob/main/LICENSE) | `FundValuationLast` 批量估值接口：可用字段列表（`FCODE,SHORTNAME,GSZZL,GZTIME,GSZ,NAV,PDATE`）、50 只/批的请求方式、`GZTIME` 秒级时间戳的截断处理 |
+| [Ye-Yu-Mo/FundVal-Live](https://github.com/Ye-Yu-Mo/FundVal-Live) | Ye-Yu-Mo | [AGPL-3.0](https://github.com/Ye-Yu-Mo/FundVal-Live/blob/main/LICENSE) | `FundMNFInfo` / `FundMNInverstPosition` 移动端接口及 iOS 通道参数（`plat=Iphone`、`version=6.2.8`、UUID 形式的 `deviceid`、iPhone UA）；`fundgz` 自 2026-07-29 起返回 HTML 而非 JSONP 的结论 |
+| [x2rr/funds](https://github.com/x2rr/funds) | x2rr | [GPL-3.0](https://github.com/x2rr/funds/blob/master/LICENSE) | 仅用于了解同类项目的接口迁移情况，未采用其实现 |
+
+**代码来源声明**
+
+- 上述项目仅作为接口用法与排查思路的参考。接口地址、请求参数、字段名称属于事实性信息，不构成受版权保护的表达。
+- 本分支的实现按其自身架构重写：`src/renderer/services/fund.ts` 新增的 `RequestFundValuationLast`、
+  `RequestFundInfoFromMobile`、`SplitCodes`、`GetFundValuations`，以及 `src/renderer/helpers/fund.ts`
+  中的批量拉取与降级显示逻辑，均为本项目自行编写，**未复制上述项目的源代码**。
+- 若后续从上述项目引入代码，须按对应许可证（AGPL-3.0 / GPL-3.0）保留版权声明、标注来源，
+  并注意 AGPL-3.0 对网络服务提供的额外义务。
+
+**本仓库的许可**
+
+- 基于上游 `1zilc/fishing-funds` v8.7.1 修改，沿用其 [GPL-3.0](LICENSE) 许可证；
+  原始版权归 [1zilc](https://github.com/1zilc) 所有，本分支的修改部分同样以 GPL-3.0 发布。
+- 依据 GPL-3.0 第 5(a) 条，修改过的文件与日期见下一节。
+
+## 七、修改记录
+
+修改日期：2026-10（Windows 环境下完成修改与构建）
+
+| 文件 | 修改内容 |
+| --- | --- |
+| `src/renderer/services/fund.ts` | 新增批量估值、移动端估值、持仓、行业接口；删除对已下线 `fundgz` 的依赖 |
+| `src/renderer/helpers/fund.ts` | 批量拉取、无估值降级显示、估值日期判断 |
+| `src/renderer/components/Toolbar/SettingContent/index.tsx` | 数据源选项收敛为天天基金 |
+| `release/app/package.json` | 版本号 8.7.1 → 8.8.1 |
+| `README.md`、`FIX.md`、`.gitignore` | 文档与忽略规则（非功能性改动） |
+

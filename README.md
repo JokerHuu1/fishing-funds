@@ -4,14 +4,33 @@
 
 # Fishing Funds
 
+## 修复说明
+
 > [!IMPORTANT]
-> **这是 `1zilc/fishing-funds` v8.7.1 的个人修复分支，非官方版本。**
->
-> 上游自 v8.8.0 起把接口层抽到了私有子模块，而旧版依赖的天天基金 JSONP 估值接口
-> （`fundgz.1234567.com.cn`）已经下线，导致基金列表全空。本分支改用天天基金新版批量估值接口，
-> 恢复了基金列表、盘中估值、持仓与指数行情。
->
-> 具体改动、接口对照与已知限制见 [FIX.md](FIX.md)。原作者与版权归 [1zilc](https://github.com/1zilc) 所有，本项目遵循 GPL-3.0。
+> **这是 [`1zilc/fishing-funds`](https://github.com/1zilc/fishing-funds) v8.7.1 的个人修复分支，非官方版本。**
+
+上游自 v8.8.0 起把接口层抽到了私有子模块（`fishing-funds-enh`），而旧版依赖的天天基金 JSONP 估值接口
+`fundgz.1234567.com.cn` 已下线，基金列表因而整片为空。本分支改用天天基金新版批量估值接口，
+恢复了基金列表、盘中估值、持仓与指数行情。
+
+故障原因、新接口对照、改动清单、构建方式与已知限制见 [FIX.md](FIX.md)。
+
+### 参考的开源项目
+
+本次修复在调研与实现过程中参考了以下项目，在此致谢：
+
+| 项目 | 作者 | 许可证 | 参考内容 |
+| --- | --- | --- | --- |
+| [real-time-fund](https://github.com/hzm0321/real-time-fund) | [hzm0321](https://github.com/hzm0321) | AGPL-3.0 | `FundValuationLast` 批量估值接口的可用字段、50 只/批的请求方式、`GZTIME` 时间格式的处理 |
+| [FundVal-Live](https://github.com/Ye-Yu-Mo/FundVal-Live) | [Ye-Yu-Mo](https://github.com/Ye-Yu-Mo) | AGPL-3.0 | `FundMNFInfo` / `FundMNInverstPosition` 移动端接口及其 iOS 通道参数（`plat=Iphone`、`version=6.2.8`、UUID 形式的 `deviceid`、iPhone UA），以及 `fundgz` 于 2026-07-29 起失效的判断 |
+
+调研阶段还查阅了 [x2rr/funds](https://github.com/x2rr/funds)（GPL-3.0）等同类项目，仅用于了解历史接口的迁移情况，未采用其实现。
+
+**关于代码来源与许可证**：上述项目仅作为接口用法与排查思路的参考——接口地址、请求参数、字段名称属于事实性信息；
+本分支的实现是按本项目自身架构重写的（见 `src/renderer/services/fund.ts`、`src/renderer/helpers/fund.ts`），
+**没有复制上述项目的源代码**。若后续引入其中代码，将按 AGPL-3.0 / GPL-3.0 的要求保留版权声明并注明来源。
+
+本分支沿用上游的 [GPL-3.0](LICENSE) 许可证，原作者与版权归 [1zilc](https://github.com/1zilc) 所有；修改文件与日期见 [FIX.md](FIX.md#七修改记录)。
 
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/1zilc/fishing-funds)
 ![GitHub Release Date](https://img.shields.io/github/release-date/1zilc/fishing-funds)
@@ -21,34 +40,25 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/1zilc/fishing-funds?color=red)
 ![GitHub package.json dependency version (dev dep on branch)](https://img.shields.io/github/package-json/dependency-version/1zilc/fishing-funds/dev/electron/main)
 ![Sandbox](https://img.shields.io/badge/sandbox-yes-blueviolet)
-<a href="https://qm.qq.com/cgi-bin/qm/qr?k=Su4GnbsicHvsPrbLMwNu557LyZQO19KZ&jump_from=webapi"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-732268738-red" alt="QQ群" /></a>
 ![GitHub](https://img.shields.io/github/license/1zilc/fishing-funds)
 ![Windows](https://img.shields.io/badge/-Windows-blue?logo=windows&logoColor=white)
 ![MacOS](https://img.shields.io/badge/-macOS-black?&logo=apple&logoColor=white)
 ![Linux](https://img.shields.io/badge/-Linux-yellow?logo=linux&logoColor=white)
 
-> 基金,大盘,股票,虚拟货币状态栏显示小应用,基于 Electron 开发,支持 MacOS,Windows,Linux 客户端,数据源来自天天基金,蚂蚁基金,同花顺-爱基金,腾讯证券等
+> 基金,大盘,股票,虚拟货币状态栏显示小应用,基于 Electron 开发,支持 MacOS,Windows,Linux 客户端
 
 ## 项目介绍
 
-- 采用天天基金等数据源接口，实时显示当前基金涨跌情况，计算显示收益，大盘实时数据，板块行情，股票走势，加密虚拟货币等
+- 实时显示当前基金涨跌情况，计算显示收益，大盘实时数据，板块行情，股票走势，加密虚拟货币等
 - 软件中所有的数据仅供参考，一切收益或是亏损按当天实际为准，任何走势，排行数据均来自于第三方网站不代表作者观点
 - 软件不收集上传ai相关功能的用户apikey，如有疑问请忽略ai功能
 - 本项目是个人自用状态栏小插件，完全开源免费，仅供学习交流
 
-## 数据源
-
-> 注意 ⚠️：不同的数据源可能会有反爬机制，刷新时的请求速度会有所差异
-> 强烈建议使用天天基金的数据源，最快同时估值也最准确
-
-- [东方财富-天天基金](https://fund.eastmoney.com/) ★★★★★ (推荐)
-- [支付宝-蚂蚁基金](https://www.fund123.cn/) ★★★☆☆
-- [同花顺-爱基金](http://fund.10jqka.com.cn/) ★★★☆☆
-- [腾讯证券](https://stockapp.finance.qq.com/mstats/) ★★★☆☆
-
 ## 下载使用
 
-> 注意 ⚠️：由于 macOS 不允许打开未签名的程序，如果出现软件无法打开请进行以下操作 或[参考这里](https://github.com/1zilc/fishing-funds/issues/149)
+安装包见本仓库的 [Releases](https://github.com/JokerHuu1/fishing-funds/releases) 页面（Windows 安装程序、macOS Apple 芯片 / Intel 各一个）。
+
+> 注意 ⚠️：本分支的 macOS 包未签名、未公证，系统默认不允许打开，首次运行请执行以下任一操作
 
 ```bash
 # 终端执行
@@ -59,22 +69,6 @@ sudo xattr -d com.apple.quarantine "/Applications/Fishing Funds.app"
 # 安全设置
 进入 「设置」- 「安全性与隐私」- 「通用」- 「允许从以下位置下载的App」-「仍然打开」
 ```
-
-- [官网下载](https://ff.1zilc.top)
-- [Homebrew 安装](https://formulae.brew.sh/cask/fishing-funds#default) `brew install --cask fishing-funds`
-- WinGet 安装 `winget install Fishing Funds`
-
-> 旧版系统
-
-- [windows 7/8 下载](https://github.com/1zilc/fishing-funds/releases/tag/v7.0.2)
-- [macOS 10.13/10.14 下载](https://github.com/1zilc/fishing-funds/releases/tag/v8.1.0)
-- [macOS 10.15 下载](https://github.com/1zilc/fishing-funds/releases/tag/v8.2.3)
-- [macOS 11 下载](https://github.com/1zilc/fishing-funds/releases/tag/v8.5.1)
-
-## 讨论交流
-
-- QQ 群: [732268738](https://download.1zilc.top/ff/screenshots/group1.jpg)
-- Issue: [#106](https://github.com/1zilc/fishing-funds/issues/106)
 
 ## AI
 
@@ -141,14 +135,6 @@ Fishing Funds支持AI识别截图导入数据，确保模型具有vision功能�
 - 通过 iCloud、OneDrive 等方式自动同步该文件至云端实现多台设备配置同步
 - 支持钱包，基金，指数，板块，股票，货币，h5 配置同步
 
-## 支持作者
-
-作者利用空闲时间开发不易，您的支持可以给本项目的开发和完善提供巨大的动力，感谢对本软件的喜爱和认可:)
-
-| 微信                                                                      | 支付宝                                                                    |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| <img src="https://download.1zilc.top/ff/qrcode/wechat.png" width="108" /> | <img src="https://download.1zilc.top/ff/qrcode/alipay.png" width="108" /> |
-
 ## 收录网站
 
 - [柠檬精选](https://lemon.qq.com/lab/app/FishingFunds.html)
@@ -170,8 +156,8 @@ Fishing Funds支持AI识别截图导入数据，确保模型具有vision功能�
 
 ## 许可证
 
-- [GPLv3](https://github.com/1zilc/fishing-funds/blob/main/LICENSE)
+本分支沿用上游 [GPL-3.0](LICENSE) 许可证，原作者与版权归 [1zilc](https://github.com/1zilc) 所有。
 
-## Star Charts
-
-[![Stargazers over time](https://starchart.cc/1zilc/fishing-funds.svg)](https://starchart.cc/1zilc/fishing-funds)
+本次修复参考的第三方项目及其许可证见上方[参考的开源项目](#参考的开源项目)；其中 [real-time-fund](https://github.com/hzm0321/real-time-fund)
+与 [FundVal-Live](https://github.com/Ye-Yu-Mo/FundVal-Live) 为 AGPL-3.0，[x2rr/funds](https://github.com/x2rr/funds) 为 GPL-3.0。
+本分支未包含其源代码，如后续引入需按对应许可证执行。
