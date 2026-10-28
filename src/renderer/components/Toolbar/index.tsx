@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
-import { Badge } from 'antd';
+import { Badge, message } from 'antd';
+import dayjs from 'dayjs';
 import clsx from 'clsx';
 import { useBoolean, useLongPress, useRequest } from 'ahooks';
 import { RiRefreshLine, RiSettingsLine, RiAppsLine } from 'react-icons/ri';
@@ -35,6 +36,30 @@ const ToolBar: React.FC<ToolBarProps> = () => {
   const freshRef = useRef<HTMLDivElement>(null);
   const updateInfo = useAppSelector((state) => state.updater.updateInfo);
   const tabsActiveKey = useAppSelector((state) => state.tabs.activeKey);
+
+  // 当前标签页是否正在刷新，用于刷新图标转圈提示
+  const fundsLoading = useAppSelector((state) => state.fund.fundsLoading);
+  const zindexsLoading = useAppSelector((state) => state.zindex.zindexsLoading);
+  const quotationsLoading = useAppSelector((state) => state.quotation.quotationsLoading);
+  const stocksLoading = useAppSelector((state) => state.stock.stocksLoading);
+  const coinsLoading = useAppSelector((state) => state.coin.coinsLoading);
+
+  const refreshing = (() => {
+    switch (tabsActiveKey) {
+      case Enums.TabKeyType.Fund:
+        return fundsLoading;
+      case Enums.TabKeyType.Zindex:
+        return zindexsLoading;
+      case Enums.TabKeyType.Quotation:
+        return quotationsLoading;
+      case Enums.TabKeyType.Stock:
+        return stocksLoading;
+      case Enums.TabKeyType.Coin:
+        return coinsLoading;
+      default:
+        return false;
+    }
+  })();
 
   const freshFunds = useFreshFunds();
   const freshZindexs = useFreshZindexs();
@@ -107,25 +132,31 @@ const ToolBar: React.FC<ToolBarProps> = () => {
     }
   });
 
-  const fresh = () => {
-    switch (tabsActiveKey) {
-      case Enums.TabKeyType.Fund:
-        freshFunds();
-        break;
-      case Enums.TabKeyType.Zindex:
-        freshZindexs();
-        break;
-      case Enums.TabKeyType.Quotation:
-        freshQuotations();
-        break;
-      case Enums.TabKeyType.Stock:
-        freshStocks();
-        break;
-      case Enums.TabKeyType.Coin:
-        freshCoins();
-        break;
-      default:
-        break;
+  const fresh = async () => {
+    try {
+      switch (tabsActiveKey) {
+        case Enums.TabKeyType.Fund:
+          await freshFunds();
+          break;
+        case Enums.TabKeyType.Zindex:
+          await freshZindexs();
+          break;
+        case Enums.TabKeyType.Quotation:
+          await freshQuotations();
+          break;
+        case Enums.TabKeyType.Stock:
+          await freshStocks();
+          break;
+        case Enums.TabKeyType.Coin:
+          await freshCoins();
+          break;
+        default:
+          return;
+      }
+      // 刷新完成给出明确反馈，避免"点了没反应"的错觉
+      message.success({ content: `已更新 ${dayjs().format('HH:mm:ss')}`, duration: 1.2 });
+    } catch (error) {
+      message.error('更新失败，请检查网络后重试');
     }
   };
 
@@ -140,7 +171,7 @@ const ToolBar: React.FC<ToolBarProps> = () => {
       <div className={clsx(styles.bar, 'max-content')}>
         <RiAppsLine style={{ ...iconSize }} onClick={openAppCenterDrawer} />
         <div ref={freshRef}>
-          <RiRefreshLine style={{ ...iconSize }} />
+          <RiRefreshLine className={clsx({ [styles.spinning]: refreshing })} style={{ ...iconSize }} />
         </div>
         <Badge dot={!!updateInfo.version}>
           <RiSettingsLine style={{ ...iconSize }} onClick={openSettingContent} />

@@ -23,3 +23,15 @@
 .themeWrapper {
   display: block;
 }
+/* 刷新中：图标持续旋转，明确表示请求正在进行 */
+.spinning {
+  animation: toolbar-refresh-spin 0.9s linear infinite;
+}
+@keyframes toolbar-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

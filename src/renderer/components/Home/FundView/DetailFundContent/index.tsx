@@ -1,5 +1,5 @@
 import React from 'react';
-import { useBoolean, useRequest } from 'ahooks';
+import { useBoolean, useRequest, clearCache } from 'ahooks';
 import clsx from 'clsx';
 import { Tabs, Rate, Avatar } from 'antd';
 
@@ -89,23 +89,37 @@ export const DetailFund: React.FC<DetailFundProps> = (props) => {
   const { data: addCode, show: showAddDrawer, set: setAddDrawer, close: closeAddDrawer } = useDrawer(code);
   const [showManagerDrawer, { setTrue: openManagerDrawer, setFalse: closeManagerDrawer }] = useBoolean(false);
 
+  const fundDetailCacheKey = Utils.GenerateRequestKey('Fund.GetFundDetailFromEastmoney', code);
+  const industryCacheKey = Utils.GenerateRequestKey('Fund.GetIndustryRateFromEaseMoney', code);
+
   const { data: fund = {} } = useRequest(() => Services.Fund.GetFixFromEastMoney(code));
-  const { data: pingzhongdata = {} as Fund.PingzhongData | Record<string, any>, run: runGetFundDetailFromEastmoney } = useRequest(
+  const { data: pingzhongdata = {} as Fund.PingzhongData | Record<string, any>, run: runFundDetailRequest } = useRequest(
     () => Services.Fund.GetFundDetailFromEastmoney(code),
     {
       refreshDeps: [code],
-      cacheKey: Utils.GenerateRequestKey('Fund.GetFundDetailFromEastmoney', code),
-      staleTime: CONST.DEFAULT.SWR_STALE_DELAY,
+      cacheKey: fundDetailCacheKey,
+      // 详情数据盘中会变，缓存只用于首屏秒开，超过 5 分钟即视为过期
+      staleTime: 1000 * 60 * 5,
     }
   );
-  const { data: industryData = { stocks: [], expansion: '' }, run: runGetIndustryRateFromEaseMoney } = useRequest(
+  const { data: industryData = { stocks: [], expansion: '' }, run: runIndustryRequest } = useRequest(
     () => Services.Fund.GetIndustryRateFromEaseMoney(code),
     {
       refreshDeps: [code],
-      cacheKey: Utils.GenerateRequestKey('Fund.GetIndustryRateFromEaseMoney', code),
-      staleTime: CONST.DEFAULT.SWR_STALE_DELAY,
+      cacheKey: industryCacheKey,
+      staleTime: 1000 * 60 * 5,
     }
   );
+
+  // 手动点刷新时必须跳过 SWR 缓存，否则在 staleTime 内会直接返回缓存、不发请求
+  const runGetFundDetailFromEastmoney = () => {
+    clearCache(fundDetailCacheKey);
+    return runFundDetailRequest();
+  };
+  const runGetIndustryRateFromEaseMoney = () => {
+    clearCache(industryCacheKey);
+    return runIndustryRequest();
+  };
 
   const rateInSimilarPersent = pingzhongdata.Data_rateInSimilarPersent || [];
   const syl_1n = pingzhongdata.syl_1n || pingzhongdata.syl_6y || pingzhongdata.syl_3y || pingzhongdata.syl_1y;
