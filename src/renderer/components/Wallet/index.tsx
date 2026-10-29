@@ -94,7 +94,10 @@ const Wallet: React.FC<WalletProps> = () => {
           </div>
         </Dropdown>
         <div className={styles.slogan}>
-          <div className={styles.timeBar}>刷新时间：{updateTime || '还没有刷新过哦~'}</div>
+          <div className={styles.timeBar}>
+            刷新时间：{updateTime || '还没有刷新过哦~'}
+            {!!calcResult.calcFundResult.noEstimateCount && ` · ${calcResult.calcFundResult.noEstimateCount} 只无盘中估值`}
+          </div>
           {eyeStatus && !miniMode && Number(calcResult.displayCysy) > 0 && (
             <div className={styles.pal}>
               已经盈利：

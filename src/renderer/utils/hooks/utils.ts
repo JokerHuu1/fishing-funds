@@ -71,16 +71,16 @@ export function useFixTimeToDo(todo: () => void, delay: number, config?: { immed
   );
 }
 
-export function useScrollToTop(config: {
+export function useScrollToTop<T = void>(config: {
   before?: () => void | Promise<void>;
-  after?: () => void | Promise<void>;
+  after?: () => T | Promise<T>;
   option?: {
     behavior?: ScrollBehavior;
     left?: number;
     top?: number;
   };
 }) {
-  return async () => {
+  return async (): Promise<T | undefined> => {
     const { before, after, option } = config;
     if (before) {
       await before();
@@ -91,7 +91,7 @@ export function useScrollToTop(config: {
       ...option,
     });
     if (after) {
-      await after();
+      return after();
     }
   };
 }
@@ -295,6 +295,12 @@ export function useLoadFunds(config?: {
           loadFixFunds();
         }
       }
+
+      // 返回本次刷新的覆盖情况，供刷新提示如实展示（主动型基金没有盘中估值）
+      const valued = responseFunds.filter(
+        (fund) => !fund.gztime?.includes(Services.Fund.NO_ESTIMATE_FLAG)
+      ).length;
+      return { total: fundConfig.length, valued };
     } finally {
       dispatch(setFundsLoadingAction(false));
     }

@@ -134,9 +134,11 @@ const ToolBar: React.FC<ToolBarProps> = () => {
 
   const fresh = async () => {
     try {
+      const isFundTab = tabsActiveKey === Enums.TabKeyType.Fund;
+      let stat: { total?: number; valued?: number } | undefined;
       switch (tabsActiveKey) {
         case Enums.TabKeyType.Fund:
-          await freshFunds();
+          stat = (await freshFunds()) as unknown as typeof stat;
           break;
         case Enums.TabKeyType.Zindex:
           await freshZindexs();
@@ -153,8 +155,17 @@ const ToolBar: React.FC<ToolBarProps> = () => {
         default:
           return;
       }
-      // 刷新完成给出明确反馈，避免"点了没反应"的错觉
-      message.success({ content: `已更新 ${dayjs().format('HH:mm:ss')}`, duration: 1.2 });
+      // 基金页被节流时不会真正发起请求，此时不提示，避免「显示成功但没有数据」
+      if (isFundTab && !stat) {
+        return;
+      }
+      const time = dayjs().format('HH:mm:ss');
+      const missing = isFundTab ? (stat!.total || 0) - (stat!.valued || 0) : 0;
+      // 刷新完成给出明确反馈，并如实说明有多少只基金本身没有盘中估值
+      message.success({
+        content: missing > 0 ? `已更新 ${time} · ${stat!.valued}/${stat!.total} 只有盘中估值` : `已更新 ${time}`,
+        duration: missing > 0 ? 2.4 : 1.2,
+      });
     } catch (error) {
       message.error('更新失败，请检查网络后重试');
     }

@@ -58,9 +58,11 @@ export function CalcFund(fund: Fund.ResponseItem & Fund.FixData, codeMap: Fund.C
   const gzrq = isNoEstimate ? fund.jzrq?.slice(5) : fund.gztime?.slice(5, 10);
   const jzrq = fund.jzrq?.slice(5);
   const isFix = fund.fixDate && fund.fixDate === gzrq;
-  const gsz = isFix ? fund.fixDwjz! : fund.gsz!;
+  // 主动型基金不提供盘中估值，此时收益为「未知」而非 0，界面需显示 -- 而不是 0.00
+  const hasEstimate = !!isFix || !isNoEstimate;
+  const gsz = (isFix ? fund.fixDwjz! : fund.gsz || fund.dwjz)!;
   const dwjz = isFix ? fund.fixDwjz! : fund.dwjz!;
-  const bjz = NP.minus(gsz!, fund.dwjz!) || 0;
+  const bjz = hasEstimate ? NP.minus(gsz, fund.dwjz!) || 0 : 0;
   const jrsygz = NP.times(cyfe, bjz);
   const gszz = NP.times(gsz!, cyfe);
   const cyje = NP.times(fund.dwjz!, cyfe);
@@ -68,7 +70,7 @@ export function CalcFund(fund: Fund.ResponseItem & Fund.FixData, codeMap: Fund.C
   const cysyl = cbj && NP.divide(NP.minus(dwjz, cbj), cbj, 0.01);
   const cysy = cbj && NP.times(NP.minus(dwjz, cbj), cyfe);
   const gszzl = isFix ? fund.fixZzl : fund.gszzl; // 估算收益率
-  const gscysyl = cbj && cbj > 0 ? (isFix ? cysyl?.toFixed(2) : (Number(cysyl) + Number(gszzl)).toFixed(2)) : '';
+  const gscysyl = hasEstimate && cbj && cbj > 0 ? (isFix ? cysyl?.toFixed(2) : (Number(cysyl) + Number(gszzl)).toFixed(2)) : '';
   // cyfe: number; // 持有份额
   // bjz: number; // 比较值
   // jrsygz: number; // 今日收益估值
@@ -91,22 +93,31 @@ export function CalcFund(fund: Fund.ResponseItem & Fund.FixData, codeMap: Fund.C
     dwjz, // 单位净值（上一次）
     gszzl, // 估算收益率
     gscysyl, // 估算持有收益率
+    hasEstimate, // 是否有可用的盘中估值（主动型基金/未更新净值为 false）
     jzrq: isFix ? fund.fixDate : jzrq, // 净值日期
   };
 }
 
 export function CalcFunds(funds: Fund.ResponseItem[] = [], codeMap: Fund.CodeMap) {
-  const [zje, gszje, sygz, cysy, cbje] = funds.reduce(
-    ([a, b, c, d, e], fund) => {
+  const [zje, gszje, sygz, cysy, cbje, noEstimateCount, valuedZje] = funds.reduce(
+    ([a, b, c, d, e, f, g], fund) => {
       const calcFundResult = CalcFund(fund, codeMap);
-      const { bjz, gsz, cysy, cbje } = calcFundResult; // 比较值（估算值 - 持有净值）
+      const { bjz, gsz, cysy, cbje, hasEstimate } = calcFundResult; // 比较值（估算值 - 持有净值）
       const cyfe = codeMap[fund.fundcode!]?.cyfe || 0; // 持有份额
       const jrsygz = NP.times(cyfe, bjz); // 今日收益估值（持有份额 * 比较值）
       const gszz = NP.times(gsz, cyfe); // 估算总值 (持有份额 * 估算值)
       const dwje = NP.times(fund.dwjz!, cyfe); // 当前金额 (持有份额 * 当前净值)
-      return [a + dwje, b + gszz, c + jrsygz, d + (cysy || 0), e + (cbje || 0)];
+      return [
+        a + dwje,
+        b + gszz,
+        c + jrsygz,
+        d + (cysy || 0),
+        e + (cbje || 0),
+        f + (hasEstimate ? 0 : 1),
+        g + (hasEstimate ? dwje : 0),
+      ];
     },
-    [0, 0, 0, 0, 0]
+    [0, 0, 0, 0, 0, 0, 0]
   );
   const gssyl = zje ? NP.times(NP.divide(sygz, zje), 100) : 0;
   const cysyl = cbje ? NP.times(NP.divide(cysy, cbje), 100) : 0;
@@ -116,11 +127,13 @@ export function CalcFunds(funds: Fund.ResponseItem[] = [], codeMap: Fund.CodeMap
   // gssyl: number; // 估算总收益率
   // cysy:number; // 持有收益
   // cysyl:number; // 持有收益率
-  return { zje, gszje, sygz, gssyl, cysy, cysyl };
+  // noEstimateCount: number; // 无盘中估值的基金数
+  // valuedZje: number; // 有估值的基金持仓金额
+  return { zje, gszje, sygz, gssyl, cysy, cysyl, noEstimateCount, valuedZje };
 }
 
 export function CalcWalletsFund(fund: Fund.ResponseItem & Fund.FixData, codeMaps: Fund.CodeMap[]) {
-  const { cyfe, jrsygz, cyje, cysy, cbje } = codeMaps.reduce(
+  const { cyfe, jrsygz, cyje, cysy, cbje, valuedCyje } = codeMaps.reduce(
     (r, codeMap) => {
       const calcFundResult = CalcFund(fund, codeMap);
       r.cyfe += calcFundResult.cyfe;
@@ -128,12 +141,13 @@ export function CalcWalletsFund(fund: Fund.ResponseItem & Fund.FixData, codeMaps
       r.cyje += calcFundResult.cyje;
       r.cysy += calcFundResult.cysy || 0;
       r.cbje += calcFundResult.cbje || 0;
+      r.valuedCyje += calcFundResult.hasEstimate ? calcFundResult.cyje : 0;
       return r;
     },
-    { cyfe: 0, jrsygz: 0, cyje: 0, cysy: 0, cbje: 0 }
+    { cyfe: 0, jrsygz: 0, cyje: 0, cysy: 0, cbje: 0, valuedCyje: 0 }
   );
   const cysyl = cbje ? NP.times(NP.divide(cysy, cbje), 100) : 0;
-  return { cyfe, jrsygz, cyje, cysy, cbje, cysyl };
+  return { cyfe, jrsygz, cyje, cysy, cbje, cysyl, valuedCyje };
 }
 
 export function MergeFixFunds(funds: (Fund.ResponseItem & Fund.FixData)[], fixFunds: Fund.FixData[]) {

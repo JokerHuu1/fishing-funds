@@ -69,7 +69,11 @@ const FundRow: React.FC<RowProps> = (props) => {
             {/* 估算持有收益率 */}
             {!!calcFundResult.cbj && eyeStatus && (
               <span className={clsx(Utils.GetValueColor(calcFundResult.gscysyl).blockClass, styles.gscysyl)}>
-                {calcFundResult.gscysyl === '' ? `0.00%` : `${Utils.Yang(calcFundResult.gscysyl)}%`}
+                {!calcFundResult.hasEstimate
+                  ? '--'
+                  : calcFundResult.gscysyl === ''
+                  ? `0.00%`
+                  : `${Utils.Yang(calcFundResult.gscysyl)}%`}
               </span>
             )}
             {isFix && <span className={styles.warn}>更新</span>}
@@ -81,7 +85,7 @@ const FundRow: React.FC<RowProps> = (props) => {
                 <span>{isFix ? calcFundResult.fixDate : calcFundResult.gztime?.slice(5)}</span>
                 {eyeStatus && (
                   <span className={clsx(Utils.GetValueColor(calcFundResult.jrsygz).textClass, styles.worth)}>
-                    {Utils.Yang(calcFundResult.jrsygz.toFixed(2))}
+                    {calcFundResult.hasEstimate ? Utils.Yang(calcFundResult.jrsygz.toFixed(2)) : '--'}
                   </span>
                 )}
               </div>
@@ -89,12 +93,12 @@ const FundRow: React.FC<RowProps> = (props) => {
           )}
         </div>
         {conciseSetting ? (
-          <div className={clsx(styles.conciseValue, Utils.GetValueColor(calcFundResult.gszzl).textClass)}>
-            {calcFundResult.gszzl === '' ? `  0.00 %` : `${Utils.Yang(calcFundResult.gszzl)} %`}
+          <div className={clsx(styles.conciseValue, Utils.GetValueColor(calcFundResult.hasEstimate ? calcFundResult.gszzl : '').textClass)}>
+            {!calcFundResult.hasEstimate ? `  --` : calcFundResult.gszzl === '' ? `  0.00 %` : `${Utils.Yang(calcFundResult.gszzl)} %`}
           </div>
         ) : (
-          <div className={clsx(styles.value, Utils.GetValueColor(calcFundResult.gszzl).blockClass)}>
-            {calcFundResult.gszzl === '' ? `  0.00 %` : `${Utils.Yang(calcFundResult.gszzl)} %`}
+          <div className={clsx(styles.value, Utils.GetValueColor(calcFundResult.hasEstimate ? calcFundResult.gszzl : '').blockClass)}>
+            {!calcFundResult.hasEstimate ? `  --` : calcFundResult.gszzl === '' ? `  0.00 %` : `${Utils.Yang(calcFundResult.gszzl)} %`}
           </div>
         )}
       </div>
@@ -128,7 +132,7 @@ const FundRow: React.FC<RowProps> = (props) => {
           <section>
             <span>{isFix ? '今日收益：' : '估算收益：'}</span>
             <span className={clsx(Utils.GetValueColor(calcFundResult.jrsygz).textClass)}>
-              ¥ {Utils.Yang(calcFundResult.jrsygz.toFixed(2))}
+              {calcFundResult.hasEstimate ? `¥ ${Utils.Yang(calcFundResult.jrsygz.toFixed(2))}` : '--'}
             </span>
           </section>
           <section>
@@ -139,7 +143,7 @@ const FundRow: React.FC<RowProps> = (props) => {
           </section>
           <section>
             <span>{isFix ? '今日总额：' : '估算总值：'}</span>
-            <span>¥ {calcFundResult.gszz.toFixed(2)}</span>
+            <span>{calcFundResult.hasEstimate ? `¥ ${calcFundResult.gszz.toFixed(2)}` : '--'}</span>
           </section>
           {calcFundResult.memo && <MemoNote text={calcFundResult.memo} />}
           <div className={styles.view}>
